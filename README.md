@@ -1,9 +1,5 @@
-[![Open in GitHub Codespaces](
-  https://img.shields.io/badge/Open%20in%20GitHub%20Codespaces-333?logo=github)](
-  https://codespaces.new/dwave-examples/immunization-strategy?quickstart=1)
-[![Linux/Mac/Windows build status](
-   https://circleci.com/gh/dwave-examples/immunization-strategy.svg?style=shield)](
-   https://circleci.com/gh/dwave-examples/immunization-strategy)
+# Important note
+This repository is a fork of D-Wave's original immunization-strategy. The contributors to this fork do not claim ownership or authorship of the original codebase. All credit for the original work belongs to D-Wave Systems and its respective contributors.
 
 # Immunization Strategy
 
