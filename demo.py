@@ -1,12 +1,31 @@
+# Copyright 2021 D-Wave Systems Inc.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
 import argparse
 import sys
 import matplotlib
 import networkx as nx
 import matplotlib.pyplot as plt
+import numpy as np
 
 import dimod
-import neal
+from qdeepsdk import QDeepHybridSolver
 
+
+
+# Trap errors with importing pyplot (for testing frameworks) and
+# specify "agg" backend
 try:
     import matplotlib.pyplot as plt
 except ImportError:
@@ -170,11 +189,36 @@ def build_bqm(G, penalty=10.0):
 
 
 def run_bqm_and_collect_solutions(bqm):
-    """Solve the penalty-based BQM using SimulatedAnnealingSampler."""
-    sampler = neal.SimulatedAnnealingSampler()
+    """Solve the penalty-based BQM using QDeepHybridSolver."""
+    solver = QDeepHybridSolver()
+    solver.token = "your_token "  # Replace with your valid token
     print("\nSolving BQM with penalty-based constraints...")
-    sampleset = sampler.sample(bqm, num_reads=200)
-    best_sample = sampleset.first.sample  # the best (lowest-energy) sample
+
+    # Convert BQM to QUBO format (and offset)
+    qubo, offset = bqm.to_qubo()
+
+    # Create a NumPy matrix from the QUBO dictionary
+    n = len(bqm.variables)
+    matrix = np.zeros((n, n))
+    mapping = {var: idx for idx, var in enumerate(bqm.variables)}
+    for (i, j), coeff in qubo.items():
+        idx_i = mapping[i]
+        idx_j = mapping[j]
+        matrix[idx_i, idx_j] = coeff
+
+    # Solve the QUBO using QDeepHybridSolver
+    result = solver.solve(matrix)
+    print("Solver result:", result)
+
+    # Extract the solution from the new API: from result['QdeepHybridSolver']['configuration']
+    if 'QdeepHybridSolver' in result and 'configuration' in result['QdeepHybridSolver']:
+        best_sample_vector = result['QdeepHybridSolver']['configuration']
+    else:
+        print("Error: The result does not contain the expected 'configuration' key.")
+        return None
+
+    # Map the configuration vector back to a dictionary using the mapping
+    best_sample = {var: best_sample_vector[mapping[var]] for var in bqm.variables}
     return best_sample
 
 
@@ -212,7 +256,7 @@ def process_sample(G, sample):
     illegal_edges = []
     for (u, v) in G.edges():
         if sample.get(f'x_{u}_0', 0) * sample.get(f'x_{v}_1', 0) == 1 or \
-           sample.get(f'x_{u}_1', 0) * sample.get(f'x_{v}_0', 0) == 1:
+            sample.get(f'x_{u}_1', 0) * sample.get(f'x_{v}_0', 0) == 1:
             illegal_edges.append((u, v))
 
     print("\nNumber of illegal edges:\t", len(illegal_edges))
@@ -224,18 +268,11 @@ def visualize_results(G, group_1, group_2, sep_group, illegal_edges):
     """Visualize the final partition."""
     print("\nVisualizing output...")
 
-    G1 = G.subgraph(group_1)
-    G2 = G.subgraph(group_2)
-    SG = G.subgraph(sep_group)
-
-    pos_1 = nx.random_layout(G1, center=(-5, 0))
-    pos_2 = nx.random_layout(G2, center=(5, 0))
-    pos_sep = nx.random_layout(SG, center=(0, 0))
-    pos = {**pos_1, **pos_2, **pos_sep}
-
-    nx.draw_networkx_nodes(G, pos_1, node_size=50, nodelist=group_1, node_color='#17bebb', edgecolors='k')
-    nx.draw_networkx_nodes(G, pos_2, node_size=50, nodelist=group_2, node_color='#2a7de1', edgecolors='k')
-    nx.draw_networkx_nodes(G, pos_sep, node_size=50, nodelist=sep_group, node_color='#f37820', edgecolors='k')
+    # Use a single layout for the full graph
+    pos = nx.spring_layout(G)
+    nx.draw_networkx_nodes(G, pos, nodelist=group_1, node_size=50, node_color='#17bebb', edgecolors='k')
+    nx.draw_networkx_nodes(G, pos, nodelist=group_2, node_size=50, node_color='#2a7de1', edgecolors='k')
+    nx.draw_networkx_nodes(G, pos, nodelist=sep_group, node_size=50, node_color='#f37820', edgecolors='k')
 
     nx.draw_networkx_edges(G, pos, edgelist=G.edges(), style='solid', edge_color='#808080')
     nx.draw_networkx_edges(G, pos, edgelist=illegal_edges, style='solid', edge_color='red')
@@ -260,7 +297,7 @@ if __name__ == '__main__':
     # 4. Build the BQM with penalty-based constraints
     bqm = build_bqm(G, penalty=10.0)
 
-    # 5. Solve the BQM with simulated annealing
+    # 5. Solve the BQM with QDeepHybridSolver
     best_sample = run_bqm_and_collect_solutions(bqm)
 
     # 6. Process the solution
